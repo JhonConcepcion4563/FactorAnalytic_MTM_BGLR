@@ -1,0 +1,99 @@
+#Factor Analytics Cross Validation
+
+rm(list = ls())
+
+library(MTM)
+library(BGLR)
+library(caret)
+
+setwd("E:/DON_Pheno_Geno_Prediction/MTM") #change to your directory
+
+A <- read.table("A_Matrix_MTM.txt", sep = "\t", header=T) #A matrix based on SNP genotype data
+#colnames(A) <- as.character(unlist(A[1, ]))
+#A <- A[-1, ]
+#row.names(A)<-A[,1]; A = A[,-1]
+
+#Always double check the column and row names of the A Matrix. Should always be the same
+
+colnames(A)[1] <- "0566A1_3_1_47"
+colnames(A)[2] <- "0762A1_2_8"
+colnames(A)[3] <- "13VTK59_55"
+
+A[is.na(A)] #check for NA
+
+A[A == Inf] <- NA #change infinite values to NA
+
+A <- na.omit(A) #remove NAs
+
+eigenvalues <- eigen(A)$values #if this runs properly, there is no infinite or
+
+
+### Cycles should start here. Re-read the Y file since we are introducing NAs
+
+correlation_results <- data.frame(Iteration = numeric(), Correlation = numeric())
+
+# Loop 100 times
+
+set.seed(123)
+
+for (i in 1:100) {
+  Y <- read.table("MTM_Range_PC2.txt", sep = "\t", header = TRUE)
+  row.names(Y) <- Y[, 1]
+  Y <- Y[, -1]
+  
+  Y2 <- Y
+  
+  num_NA <- ceiling(0.2 * nrow(Y))
+  
+  NA_indices <- sample(1:nrow(Y), num_NA, replace = FALSE)
+  
+  Y$DON[NA_indices] <- NA
+  
+  
+  M <- matrix(nrow = 3, ncol = 1, TRUE)
+  
+  fm <- MTM(
+    Y = Y,
+    K = list(
+      list(
+        K = A,
+        COV = list(
+          type = 'FA',
+          M = M,
+          S0 = rep(1, 3),
+          df0 = rep(1, 3),
+          var = 100
+        )
+      )
+    ),
+    resCov = list(
+      type = 'DIAG',
+      S0 = rep(1, 3),
+      df0 = rep(1, 3)
+    ),
+    nIter = 5000,
+    burnIn = 500,
+    thin = 5,
+    saveAt='ex3_'
+  )
+  
+  # Store the prediction
+  pred <- fm$YHat
+  
+  rows_with_NA <- rownames(Y)[apply(is.na(Y), 1, any)]
+  
+  subset_dataY <- Y2[rows_with_NA, ]
+  subset_dataPred <- pred[rows_with_NA, ]
+  
+  DON_Y <- subset_dataY[, 1]
+  DON_pred <- subset_dataPred[, 1]
+  
+  correlation <- cor(DON_Y, DON_pred)
+  
+  # Append the correlation value to the dataframe
+  correlation_results <- rbind(correlation_results, data.frame(Iteration = i, Correlation = correlation))
+}
+
+mean(correlation_results$Correlation)
+
+write.csv(correlation_results, "MTM_FactorAnalysis_2PC_(PC-Range).csv") #Change to your desired file name
